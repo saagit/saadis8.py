@@ -1,18 +1,6 @@
 #!/usr/bin/env python3
 
-"""Disassembler for MC6808 microprocessor.
-
-This code has been written with the hope that it can be easily adapted
-to work with other 8-bit von Neumann architecture CPUs.
-
-The representations of devices is very, very minimal because producing
-disassembled code doesn't require more.
-
-In this code, a "CPU" object fetches opcodes from a "ROM" object with
-the mapping from a CPU address to an address in a ROM provided by a
-"MemoryMap" object.  Trying to fetch an opcode from a non-"ROM"
-"MemoryDevice" object results in an exception being raised.
-"""
+"""Disassembler for MC6808 microprocessor."""
 
 # BSD Zero Clause License
 #
@@ -29,15 +17,54 @@ the mapping from a CPU address to an address in a ROM provided by a
 # OTHER TORTIOUS ACTION, ARISING OUT OF OR IN CONNECTION WITH THE USE OR
 # PERFORMANCE OF THIS SOFTWARE.
 
+import argparse
 from collections.abc import Sequence
 from dataclasses import dataclass, field
+import os
 import sys
+
+# This code has been written with the hope that it can be easily adapted to
+# work with other 8-bit von Neumann architecture CPUs.
+#
+# The representations of devices is very, very minimal because producing
+# disassembled code doesn't require more.
+#
+# In this code, a "CPU" object fetches opcodes from a "ROM" object with the
+# mapping from a CPU address to an address in a ROM provided by a "MemoryMap"
+# object.  Trying to fetch an opcode from a non-"ROM" "MemoryDevice" object
+# results in an exception being raised.
 
 # SAATODO: argument parsing
 # SAATODO: Store memory_use as sortedcontainers.SortedDict?
 # SAATODO: Add flags to memory_use to mark destinations that need labels:
 # SAATODO: Do the actual disassembly
 # SAATODO: Figure out module/package
+
+VERSION='0.01'
+
+def progname() -> str:
+    """
+    Return the name of this program.
+    """
+    return os.path.basename(__file__)
+
+def parse_args() -> argparse.Namespace:
+    """
+    Parse the command line arguments.
+    """
+    parser = argparse.ArgumentParser(description=__doc__, prog=progname(),
+                                     add_help=False)
+    parser.add_argument('-h', '--help',
+                        help='display this help and exit',
+                        action='help')
+    parser.add_argument('-V', '--version',
+                        help='output version information and exit',
+                        action='version', version='%(prog)s v' + VERSION)
+    parser.add_argument('rom_file', metavar='ROM_FILE',
+                        help='File containing the ROM image')
+    args = parser.parse_args()
+
+    return args
 
 class Disassem8Error(Exception):
     """
@@ -609,7 +636,8 @@ class CPU():
 
 def main() -> int:
     """The main event."""
-    rom_5c = ROM('ROM_5C', 'rom.bin')
+    args = parse_args()
+    rom_5c = ROM('ROM_5C', args.rom_file)
     # The first quarter (16KB) of the EPROM is not addressable:
     rom_5c.data = rom_5c.data[0x4000:]
     assert len(rom_5c) == 0xC000
