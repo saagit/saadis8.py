@@ -37,7 +37,7 @@ import sys
 # SAATODO: argument parsing
 # SAATODO: Store memory_use as sortedcontainers.SortedDict?
 # SAATODO: Add flags to memory_use to mark destinations that need labels:
-# SAATODO: Do the actual disassembly
+# SAATODO: Do the actual disassembly (target crasm)
 # SAATODO: Figure out module/package
 
 VERSION='0.01'
@@ -60,8 +60,14 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument('-V', '--version',
                         help='output version information and exit',
                         action='version', version='%(prog)s v' + VERSION)
+    parser.add_argument('--notify-unfollowed',
+                        help='print operands that are not followed to stderr',
+                        action='store_true')
+    parser.add_argument('--notify-vectors',
+                        help='print vectors being processed to stderr',
+                        action='store_true')
     parser.add_argument('rom_file', metavar='ROM_FILE',
-                        help='File containing the ROM image')
+                        help='file containing the ROM image')
     args = parser.parse_args()
 
     return args
@@ -392,7 +398,8 @@ class CPU():
         0xFFFE   # RST Reset
     ]
 
-    def __init__(self, memory: MemoryMap):
+    def __init__(self, memory: MemoryMap, args: argparse.Namespace):
+        self.args = args
         self.max_opcode_len = 0
         for opcode_bytes, opcode in self.opcodes.items():
             opcode_len = len(opcode_bytes)
@@ -551,9 +558,11 @@ class CPU():
             operand = self.memory[address + opcode.opcode_len]
         else:
             operand = self.get_u16(address + opcode.opcode_len)
-        print(f'; Not following indexed '
-              f'{"code" if opcode.branches else "data"} 0x{operand:04x} '
-              f'from address 0x{address:04x}')
+        if self.args.notify_unfollowed:
+            print(f'Not following indexed '
+                  f'{"code" if opcode.branches else "data"} '
+                  f'0x{operand:0{opcode.operand_len*2}X} '
+                  f'from address 0x{address:04X}', file=sys.stderr)
         if opcode.continues:
             return (address + opcode.total_len, )
         return tuple()
@@ -591,7 +600,9 @@ class CPU():
         if self.set_memory_use('vector', address, 2):
             return
         code_address = self.get_u16(address)
-        print(f'==== Vector 0x{address:04X} -> 0x{code_address:04X} ====')
+        if self.args.notify_vectors:
+            print(f'Vector at 0x{address:04X} points to code at '
+                  f'0x{code_address:04X}', file=sys.stderr)
         self.process_opcode(code_address)
 
     def process_potential_code(self, address: int) -> int:
@@ -678,7 +689,7 @@ def main() -> int:
 
                             (0x4000, len(rom_5c), rom_5c)))
 
-    cpu = CPU(memory_map)
+    cpu = CPU(memory_map, args)
     cpu.process_vectors()
     cpu.process_code_gaps()
 
