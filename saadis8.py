@@ -34,8 +34,6 @@ import sys
 # object.  Trying to fetch an opcode from a non-"ROM" "MemoryDevice" object
 # results in an exception being raised.
 
-# SAATODO: argument parsing
-# SAATODO: Store memory_use as sortedcontainers.SortedDict?
 # SAATODO: Add flags to memory_use to mark destinations that need labels:
 # SAATODO: Do the actual disassembly (target crasm)
 # SAATODO: Figure out module/package
@@ -614,7 +612,7 @@ class CPU():
 
         Return the number of opcodes discovered.
         """
-        saved_memory_use = self.memory_use
+        saved_memory_use = self.memory_use.copy()  # Shallow copy of dict
         try:
             return self.process_opcode(address)
         except Disassem8Error:
