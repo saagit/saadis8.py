@@ -34,7 +34,6 @@ import sys
 # object.  Trying to fetch an opcode from a non-"ROM" "MemoryDevice" object
 # results in an exception being raised.
 
-# SAATODO: Add flags to memory_use to mark destinations that need labels:
 # SAATODO: Do the actual disassembly (target crasm)
 # SAATODO: Figure out module/package
 
@@ -407,6 +406,7 @@ class CPU():
                 self.max_opcode_len = opcode_len
         self.memory = memory
         self.memory_use: dict[int, str] = {}
+        self.memory_referenced: set[int] = set()
         self.get_u16 = self.get_u16_be if self.big_endian else self.get_u16_le
 
     def __getitem__(self, address: int) -> int:
@@ -505,6 +505,7 @@ class CPU():
             operand = self.memory[address + opcode.opcode_len]
         else:
             operand = self.get_u16(address + opcode.opcode_len)
+        self.memory_referenced.add(operand)
         code_addresses = []
         if opcode.branches:
             code_addresses.append(operand)
@@ -531,9 +532,11 @@ class CPU():
             operand = self.get_u16(address + opcode.opcode_len)
             if operand > 0x7FFF:
                 operand -= 0x10000
+        operand = address + opcode.total_len + operand
+        self.memory_referenced.add(operand)
         code_addresses = []
         if opcode.branches:
-            code_addresses.append(address + opcode.total_len + operand)
+            code_addresses.append(operand)
         else:
             # Does anything do relative addressing for code?
             self.set_memory_use('data', operand, 1)
@@ -601,6 +604,7 @@ class CPU():
         if self.args.notify_vectors:
             print(f'Vector at 0x{address:04X} points to code at '
                   f'0x{code_address:04X}', file=sys.stderr)
+        self.memory_referenced.add(code_address)
         self.process_opcode(code_address)
 
     def process_potential_code(self, address: int) -> int:
@@ -612,11 +616,13 @@ class CPU():
 
         Return the number of opcodes discovered.
         """
-        saved_memory_use = self.memory_use.copy()  # Shallow copy of dict
+        saved_memory_use = self.memory_use.copy()
+        saved_memory_referenced = self.memory_referenced.copy()
         try:
             return self.process_opcode(address)
         except Disassem8Error:
             self.memory_use = saved_memory_use
+            self.memory_referenced = saved_memory_referenced
             return 0
 
     def process_code_gaps(self) -> None:
