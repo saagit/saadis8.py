@@ -442,6 +442,7 @@ class CPU():
         self.memory = memory
         self.memory_use: dict[int, str] = {}
         self.memory_referenced: set[int] = set()
+        self.labels: dict[int, str] = {}
         self.get_u16 = self.get_u16_be if self.big_endian else self.get_u16_le
 
     def __getitem__(self, address: int) -> int:
@@ -681,8 +682,11 @@ class CPU():
         """Return an assembly label for location <address>."""
         if not address in self.memory_referenced:
             return ''
-        device, offset = self.memory.device_and_offset(address)
-        return f'{device.name}_{offset:04X}'
+        try:
+            return self.labels[address]
+        except KeyError:
+            device, offset = self.memory.device_and_offset(address)
+            return f'{device.name}_{offset:04X}'
 
     def disassemble_opcode(self, address: int, label: str,
                            out_file: TextIO) -> int:
@@ -800,6 +804,11 @@ def main() -> int:
     cpu = CPU(memory_map, args)
     cpu.process_vectors()
     cpu.process_code_gaps()
+    cpu.labels |= {
+        0x4100: 'RESET',
+        0x6268: 'IRQ_HANDLER',
+        0x40C4: 'NMI_HANDLER'
+    }
 
     print('        CPU 6800')
     print('NBA     MACRO')
