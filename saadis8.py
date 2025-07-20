@@ -58,8 +58,8 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument('-V', '--version',
                         help='output version information and exit',
                         action='version', version='%(prog)s v' + VERSION)
-    parser.add_argument('--notify-unfollowed',
-                        help='print operands that are not followed to stderr',
+    parser.add_argument('--comment-unfollowed',
+                        help='Comment unfollowed indexed memory accesses.',
                         action='store_true')
     parser.add_argument('--notify-vectors',
                         help='print vectors being processed to stderr',
@@ -593,12 +593,6 @@ class CPU():
         The returned tuple may contain 0 or 1 addresses depending on whether
         the particular opcode continues execution after itself.
         """
-        operand, operand_len = self.get_operand_and_len(address, opcode)
-        if self.args.notify_unfollowed:
-            print(f'Not following indexed '
-                  f'{"code" if opcode.branches else "data"} '
-                  f'0x{operand:0{operand_len*2}X} '
-                  f'from address 0x{address:04X}', file=sys.stderr)
         if opcode.continues:
             return (address + opcode.total_len, )
         return tuple()
@@ -630,6 +624,7 @@ class CPU():
         """Process memory at <address> as code."""
         self.memory_referenced.add(address)
         self.process_opcode(address)
+
     def process_vector(self, address: int) -> None:
         """Fetch an address of code from <address> and process it."""
         if self.set_memory_use('vector', address, 2):
@@ -719,8 +714,14 @@ class CPU():
                   file=out_file)
         elif opcode.addressing_mode == 'indexed':
             assert opcode.index_register
+            if self.args.comment_unfollowed:
+                code_or_data = "code" if opcode.branches else "data"
+                comment = f'  ; Indexed {code_or_data} not followed.'
+            else:
+                comment = ''
             print(f'{label:7} {opcode.mnemonic} '
-                  f'${operand:0{operand_len*2}X},{opcode.index_register}',
+                  f'${operand:0{operand_len*2}X},{opcode.index_register}'
+                  f'{comment}',
                   file=out_file)
         else:
             raise UnknownAddressingModeError(address, opcode.addressing_mode)
