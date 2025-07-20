@@ -74,7 +74,7 @@ class Disassem8Error(Exception):
     Base class for all of our possible exceptions.
     """
 
-class OpcodeLocationError(Disassem8Error):
+class LocationAccessError(Disassem8Error):
     """
     Exception raised when an attempt is made to fetch an opcode from non-ROM.
     """
@@ -85,7 +85,7 @@ class OpcodeLocationError(Disassem8Error):
                         f'offset 0x{offset:04X} of {name}')
         super().__init__(self.message)
 
-class MemoryUseError(Disassem8Error):
+class SetUseError(Disassem8Error):
     """
     Exception raised when attempting to change the use of a memory location.
     """
@@ -97,6 +97,15 @@ class MemoryUseError(Disassem8Error):
                         f'of type {old_usage} to type {new_usage}')
         super().__init__(self.message)
 
+class UnknownUseError(Disassem8Error):
+    """
+    Exception raised when the use of a memory location is unknown.
+    """
+    def __init__(self, address: int, usage: str):
+        self.address = address
+        self.usage = usage
+        self.message = f'The use {usage} of memory at 0x{address:04X} is unknown.'
+        super().__init__(self.message)
 class OpcodeInvalidError(Disassem8Error):
     """
     Exception raised when a fetched opcode is not recognized.
@@ -108,6 +117,17 @@ class OpcodeInvalidError(Disassem8Error):
                         f'at address  0x{address:04X}')
         super().__init__(self.message)
 
+class UnknownAddressingModeError(Disassem8Error):
+    """
+    Exception raised when the addressing mode is unexpected.
+    """
+    def __init__(self, address: int, addressing_mode: str):
+        self.address = address
+        self.addressing_mode = addressing_mode
+        self.message = (f'Addressing mode {addressing_mode} at '
+                        f'0x{address:04X} is unknown.')
+        super().__init__(self.message)
+
 class MemoryDevice():
     """Base class for devices that can be put in a memory map."""
     # pylint: disable=too-few-public-methods
@@ -115,7 +135,7 @@ class MemoryDevice():
         self.name = name
 
     def __getitem__(self, offset: int) -> int:
-        raise OpcodeLocationError(self.name, offset)
+        raise LocationAccessError(self.name, offset)
 
 class ROM(MemoryDevice):
     """A trivial class to represent a programmed Read-Only Memory device."""
@@ -439,7 +459,7 @@ class CPU():
         Set the usage of <num_bytes> of memory starting at <address> to <use>.
 
         If the usage of all the bytes starting <address> was already <use>,
-        return True.  Raise MemoryUseError if the <use> of any of the bytes
+        return True.  Raise SetUseError if the <use> of any of the bytes
         was already set to some other usage.  If the usage of any of the bytes
         hadn't been set before, return False.
         """
@@ -448,8 +468,7 @@ class CPU():
             if use_address in self.memory_use:
                 if self.memory_use[use_address] == use:
                     continue
-                raise MemoryUseError(use_address,
-                                     self.memory_use[use_address], use)
+                raise SetUseError(use_address, self.memory_use[use_address], use)
             self.memory_use[use_address] = use
             all_set_correctly = False
         return all_set_correctly
