@@ -484,6 +484,12 @@ class CPU():
                 return opcode_bytes
         raise OpcodeInvalidError(address, self.memory[address])
 
+    def get_operand_and_len(self, address: int, opcode:Opcode) -> tuple[int, int]:
+        """Return raw operand and its byte length for <opcode> at <address>."""
+        if opcode.operand_len == 1:
+            return (self.memory[address + opcode.opcode_len], 1)
+        assert opcode.operand_len == 2
+        return (self.get_u16(address + opcode.opcode_len), 2)
     # The operand_* methods are passed the address of the operand and the
     # bytes that make up the operand which can be used as a key into the
     # self.opcodes dict.  Each operand_* handles a different addressing mode.
@@ -520,10 +526,7 @@ class CPU():
         whether the particular opcode continues execution after itself and
         whether the code can branch.
         """
-        if opcode.operand_len == 1:
-            operand = self.memory[address + opcode.opcode_len]
-        else:
-            operand = self.get_u16(address + opcode.opcode_len)
+        operand, _operand_len = self.get_operand_and_len(address, opcode)
         self.memory_referenced.add(operand)
         code_addresses = []
         if opcode.branches:
@@ -542,15 +545,13 @@ class CPU():
         whether the particular opcode continues execution after itself and
         whether the code can branch.
         """
-        if opcode.operand_len == 1:
-            operand = self.memory[address + opcode.opcode_len]
+        operand, operand_len = self.get_operand_and_len(address, opcode)
+        if operand_len == 1:
             if operand > 0x7F:
                 operand -= 0x100
-        else:
+        elif operand > 0x7FFF:
             # Does anything do 16-bit relative addressing?
-            operand = self.get_u16(address + opcode.opcode_len)
-            if operand > 0x7FFF:
-                operand -= 0x10000
+            operand -= 0x10000
         operand = address + opcode.total_len + operand
         self.memory_referenced.add(operand)
         code_addresses = []
@@ -574,14 +575,11 @@ class CPU():
         The returned tuple may contain 0 or 1 addresses depending on whether
         the particular opcode continues execution after itself.
         """
-        if opcode.operand_len == 1:
-            operand = self.memory[address + opcode.opcode_len]
-        else:
-            operand = self.get_u16(address + opcode.opcode_len)
+        operand, operand_len = self.get_operand_and_len(address, opcode)
         if self.args.notify_unfollowed:
             print(f'Not following indexed '
                   f'{"code" if opcode.branches else "data"} '
-                  f'0x{operand:0{opcode.operand_len*2}X} '
+                  f'0x{operand:0{operand_len*2}X} '
                   f'from address 0x{address:04X}', file=sys.stderr)
         if opcode.continues:
             return (address + opcode.total_len, )
