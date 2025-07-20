@@ -752,6 +752,21 @@ class CPU():
             # At this point, we know an opcode is at <address>
             address += self.disassemble_opcode(address, label, out_file)
 
+    def analyze_unknown_rom(self) -> dict[int, int]:
+        """
+        Return dict of number of discovered opcodes for each unknown ROM address.
+
+        Experimental helper method to find blocks of undiscovered code.
+        """
+        unknowns = [address for address in range(0x10000)
+                    if (self.memory.is_rom(address)
+                        and address not in self.memory_use)]
+        results = {}
+        for unknown in unknowns:
+            if num_opcodes := self.process_potential_code(unknown):
+                results[unknown] = num_opcodes
+        return results
+
 def main() -> int:
     """The main event."""
     args = parse_args()
