@@ -214,6 +214,7 @@ class CPU():
     """
     Base class for disassembling 8-bit von Neumann architecture CPU code.
     """
+    # pylint: disable=too-many-public-methods
     opcodes = {
         b'\x01': Opcode('NOP', 'inherent', 0),
         b'\x06': Opcode('TAP', 'inherent', 0),
@@ -625,6 +626,10 @@ class CPU():
             opcodes_processed += self.process_opcode(to_process)
         return opcodes_processed
 
+    def process_code(self, address: int) -> None:
+        """Process memory at <address> as code."""
+        self.memory_referenced.add(address)
+        self.process_opcode(address)
     def process_vector(self, address: int) -> None:
         """Fetch an address of code from <address> and process it."""
         if self.set_memory_use('vector', address, 2):
@@ -633,8 +638,7 @@ class CPU():
         if self.args.notify_vectors:
             print(f'Vector at 0x{address:04X} points to code at '
                   f'0x{code_address:04X}', file=sys.stderr)
-        self.memory_referenced.add(code_address)
-        self.process_opcode(code_address)
+        self.process_code(code_address)
 
     def process_potential_code(self, address: int) -> int:
         """
@@ -805,6 +809,9 @@ def main() -> int:
     cpu.process_vectors()
     cpu.process_code_gaps()
     cpu.labels |= {
+        0x014E: 'IRQ_MISSED',
+        0x0670: 'NMI_FLAG',
+        0x03E0: 'IRQ_COUNT',
         0x4100: 'RESET',
         0x6268: 'IRQ_HANDLER',
         0x40C4: 'NMI_HANDLER'
