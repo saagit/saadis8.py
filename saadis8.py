@@ -22,6 +22,7 @@ from collections.abc import Sequence
 from dataclasses import dataclass, field
 import os
 import sys
+from typing import TextIO
 
 # This code has been written with the hope that it can be easily adapted to
 # work with other 8-bit von Neumann architecture CPUs.
@@ -106,6 +107,7 @@ class UnknownUseError(Disassem8Error):
         self.usage = usage
         self.message = f'The use {usage} of memory at 0x{address:04X} is unknown.'
         super().__init__(self.message)
+
 class OpcodeInvalidError(Disassem8Error):
     """
     Exception raised when a fetched opcode is not recognized.
@@ -166,9 +168,19 @@ class MemoryMap():
             for offset in range(length):
                 self.memory_map[base_address + offset] = (device, offset)
 
+    def device_and_offset(self, address_in_memory_map: int) -> tuple[MemoryDevice,
+                                                                     int]:
+        """Return the memory device and offset for <address_in_memory_map>."""
+        return self.memory_map[address_in_memory_map]
+
     def __getitem__(self, address_in_memory_map: int) -> int:
         device, offset = self.memory_map[address_in_memory_map]
         return device[offset]
+
+    def is_rom(self, address_in_memory_map: int) -> bool:
+        """Return True iff the device at <address_in_memory_map> is ROM."""
+        device, _offset = self.memory_map[address_in_memory_map]
+        return isinstance(device, ROM)
 
 @dataclass
 class Opcode():
@@ -493,6 +505,7 @@ class CPU():
             return (self.memory[address + opcode.opcode_len], 1)
         assert opcode.operand_len == 2
         return (self.get_u16(address + opcode.opcode_len), 2)
+
     # The operand_* methods are passed the address of the operand and the
     # bytes that make up the operand which can be used as a key into the
     # self.opcodes dict.  Each operand_* handles a different addressing mode.
@@ -605,11 +618,6 @@ class CPU():
         if opcode_covered and operand_covered:
             return 0  # No need for further processing
 
-        hexdump = f'0x{address:04X}: '
-        for byte in [self.memory[address + o] for o in range(opcode.total_len)]:
-            hexdump = f'{hexdump} 0x{byte:02X}'
-        print(f'{hexdump:24} {opcode}')
-
         operand_method = getattr(self, f'operand_{opcode.addressing_mode}')
         opcodes_processed = 1
         for to_process in operand_method(address, opcode):
@@ -669,6 +677,81 @@ class CPU():
             if not found:
                 break
 
+    def label_str(self, address: int) -> str:
+        """Return an assembly label for location <address>."""
+        if not address in self.memory_referenced:
+            return ''
+        device, offset = self.memory.device_and_offset(address)
+        return f'{device.name}_{offset:04X}'
+
+    def disassemble_opcode(self, address: int, label: str,
+                           out_file: TextIO) -> int:
+        """Print a disassembled opcode to <out_file> & return opcode length."""
+        opcode = self.opcodes[self.find_opcode_bytes(address)]
+        if opcode.addressing_mode == 'inherent':
+            print(f'{label:7} {opcode.mnemonic}', file=out_file)
+            return opcode.total_len
+
+        # At this point, we know an opcode is at <address> and has an operand
+        operand, operand_len = self.get_operand_and_len(address, opcode)
+        if opcode.addressing_mode == 'immediate':
+            print(f'{label:7} {opcode.mnemonic} #${operand:0{operand_len*2}X}',
+                  file=out_file)
+        elif opcode.addressing_mode == 'direct':
+            print(f'{label:7} {opcode.mnemonic} {self.label_str(operand)}',
+                  file=out_file)
+        elif opcode.addressing_mode == 'relative':
+            if operand_len == 1:
+                if operand > 0x7F:
+                    operand -= 0x100
+            elif operand > 0x7FFF:
+                operand -= 0x10000  # Are 16-bit relative addresses used?
+            operand = address + opcode.total_len + operand
+            print(f'{label:7} {opcode.mnemonic} {self.label_str(operand)}',
+                  file=out_file)
+        elif opcode.addressing_mode == 'indexed':
+            assert opcode.index_register
+            print(f'{label:7} {opcode.mnemonic} '
+                  f'${operand:0{operand_len*2}X},{opcode.index_register}',
+                  file=out_file)
+        else:
+            raise UnknownAddressingModeError(address, opcode.addressing_mode)
+        return opcode.total_len
+
+    def disassemble(self, out_file: TextIO) -> None:
+        """Print disassembled code to <out_file>."""
+        address = 0x0000
+        need_origin = False
+        while address < 0x10000:
+            label = self.label_str(address)
+            if not self.memory.is_rom(address):
+                if address in self.memory_use:
+                    print(f'{label:7} equ ${address:04X}', file=out_file)
+                need_origin = True
+                address += 1
+                continue
+
+            # At this point, we know <address> is in ROM
+            if need_origin:
+                print(f'\n        * = ${address:04X}', file=out_file)
+                need_origin = False
+
+            address_usage = self.memory_use.get(address, 'data')
+            if address_usage == 'data':
+                print(f'{label:7} DB ${self[address]:02X}', file=out_file)
+                address += 1
+                continue
+            if address_usage == 'vector':
+                print(f'{label:7} DW {self.label_str(self.get_u16(address))}',
+                      file=out_file)
+                address += 2
+                continue
+            if address_usage != 'opcode':
+                raise UnknownUseError(address, address_usage)
+
+            # At this point, we know an opcode is at <address>
+            address += self.disassemble_opcode(address, label, out_file)
+
 def main() -> int:
     """The main event."""
     args = parse_args()
@@ -703,22 +786,11 @@ def main() -> int:
     cpu.process_vectors()
     cpu.process_code_gaps()
 
-    begin_address = 0
-    last_address = 0
-    current_type = None
-    for used_address in sorted(cpu.memory_use):
-        mem_type = ('data'
-                    if cpu.memory_use[used_address] in {'data', 'vector'} else
-                    'code')
-        if mem_type != current_type or used_address != last_address + 1:
-            if current_type:
-                print(f'0x{begin_address:04X}-0x{last_address:04X}: {mem_type}')
-            current_type = mem_type
-            begin_address = last_address = used_address
-        else:
-            last_address = used_address
-        # SAATODO: dump the last chunk
-
+    print('        CPU 6800')
+    print('NBA     MACRO')
+    print('        DB 0x14')
+    print('        ENDM')
+    cpu.disassemble(sys.stdout)
     return 0
 
 if __name__ == "__main__":
