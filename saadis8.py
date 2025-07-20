@@ -669,46 +669,32 @@ class CPU():
 def main() -> int:
     """The main event."""
     args = parse_args()
-    rom_5c = ROM('ROM_5C', args.rom_file)
+    rom = ROM('ROM', args.rom_file)
     # The first quarter (16KB) of the EPROM is not addressable:
-    rom_5c.data = rom_5c.data[0x4000:]
-    assert len(rom_5c) == 0xC000
+    rom.data = rom.data[0x4000:]
+    assert len(rom) == 0xC000
 
-    memory_map = MemoryMap(((0x0000, 0x2000, MemoryDevice('RAM')),
-
-                            # 6821 5F is at 3E on page 3 of the CPU schematics.
-                            # It is used for solenoid drivers 9 through 16.
-                            (0x2100, 0x0100, MemoryDevice('6821 5F')),
-
-                            # 74LS273 5H is at 4D on page 3 of the CPU schem.
-                            # It is used for solenoid drivers 1 through 8.
-                            (0x2200, 0x0100, MemoryDevice('74LS273 5H')),
-
-                            # 6821 11D is at 3B on page 3 of the CPU schematics.
-                            # It is used for the lamp matrix.
-                            (0x2400, 0x0400, MemoryDevice('6821 11D')),
-
-                            # 6821 11B is at 4C on page 2 of the CPU
-                            # schematics.  It is used for the DMD, printer,
-                            # diagnostic switches, #BLANKING and PIA LED on CPU
-                            # board.
-                            (0x2800, 0x0400, MemoryDevice('6821 11B')),
-
-                            # 6821 9B is at 10B on page 2 of the CPU schematics.
-                            # It is used for the alphanumeric segment drivers
-                            # and sound drivers.
-                            (0x2C00, 0x0400, MemoryDevice('6821 9B')),
-
-                            # 6821 8H is at 4E on page 2 of the CPU schematics.
-                            # It is used for the switch matrix.
-                            (0x3000, 0x0400, MemoryDevice('6821 8H')),
-
-                            # 6821 7B is at 10E on page 2 of the CPU schematics.
-                            # It is used for the alphanumeric segment drivers
-                            # and sound drivers.
-                            (0x3400, 0x0400, MemoryDevice('6821 7B')),
-
-                            (0x4000, len(rom_5c), rom_5c)))
+    memory_map = MemoryMap((
+        (0x0000, 0x2000, MemoryDevice('RAM')),
+        # PIA 6821 5F is used for solenoid drivers 9 through 16:
+        (0x2100, 0x0100, MemoryDevice('PIAsol9_16')),
+        # 74LS273 5H is used for# solenoid drivers 1 through 8:
+        (0x2200, 0x0100, MemoryDevice('LS273sol1_8')),
+        # PIA 6821 11D is used for the lamp matrix:
+        (0x2400, 0x0400, MemoryDevice('PIAlamps')),
+        # PIA 6821 11B is used for the DMD, printer, diagnostic switches,
+        # #BLANKING and PIA LED on CPU board:
+        (0x2800, 0x0400, MemoryDevice('PIA11B')),
+        # PIA 6821 9B is used for the alphanumeric segment drivers and sound
+        # drivers:
+        (0x2C00, 0x0400, MemoryDevice('PIA9B')),
+        # PIA 6821 8H is used for the switch matrix:
+        (0x3000, 0x0400, MemoryDevice('PIAswitches')),
+        # PIA 6821 7B is used for the alphanumeric segment drivers and sound
+        # drivers:
+        (0x3400, 0x0400, MemoryDevice('PIA7B')),
+        (0x4000, len(rom), rom)
+    ))
 
     cpu = CPU(memory_map, args)
     cpu.process_vectors()
