@@ -647,6 +647,7 @@ class CPU():
         saved_memory_use = self.memory_use.copy()
         saved_memory_referenced = self.memory_referenced.copy()
         try:
+            self.memory_referenced.add(address)
             return self.process_opcode(address)
         except Disassem8Error:
             self.memory_use = saved_memory_use
