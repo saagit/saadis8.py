@@ -206,6 +206,7 @@ class Opcode():
     index_register: str = ''  # Which register is used for indexed access?
     branches: bool = False  # Can this opcode cause a branch to the operand?
     continues: bool = True  # Does execution continue to the code that follows?
+    used: bool = False  # Was this opcode disassembled?
 
     def __str__(self) -> str:
         return f'{self.mnemonic} <{self.addressing_mode}>'
@@ -215,6 +216,7 @@ class CPU():
     Base class for disassembling 8-bit von Neumann architecture CPU code.
     """
     # pylint: disable=too-many-public-methods
+    # pylint: disable=too-many-instance-attributes
     opcodes = {
         b'\x01': Opcode('NOP', 'inherent', 0),
         b'\x06': Opcode('TAP', 'inherent', 0),
@@ -314,7 +316,7 @@ class CPU():
         b'\x84': Opcode('ANDA', 'immediate', 1),
         b'\x85': Opcode('BITA', 'immediate', 1),
         b'\x86': Opcode('LDAA', 'immediate', 1),
-        b'\x87': Opcode('STAA', 'immediate', 1),
+        # b'\x87': Opcode('STAA', 'immediate', 1), # Store Immediate not handled
         b'\x88': Opcode('EORA', 'immediate', 1),
         b'\x89': Opcode('ADCA', 'immediate', 1),
         b'\x8A': Opcode('ORAA', 'immediate', 1),
@@ -322,7 +324,7 @@ class CPU():
         b'\x8C': Opcode('CPX', 'immediate', 2),
         b'\x8D': Opcode('BSR', 'relative', 1, branches=True),
         b'\x8E': Opcode('LDS', 'immediate', 2),
-        b'\x8F': Opcode('STS', 'immediate', 1),
+        # b'\x8F': Opcode('STS', 'immediate', 2), # Store Immediate not handled
         b'\x90': Opcode('SUBA', 'direct', 1),
         b'\x91': Opcode('CMPA', 'direct', 1),
         b'\x92': Opcode('SBCA', 'direct', 1),
@@ -374,13 +376,13 @@ class CPU():
         b'\xC4': Opcode('ANDB', 'immediate', 1),
         b'\xC5': Opcode('BITB', 'immediate', 1),
         b'\xC6': Opcode('LDAB', 'immediate', 1),
-        b'\xC7': Opcode('STAB', 'immediate', 1),
+        # b'\xC7': Opcode('STAB', 'immediate', 1), # Store Immediate not handled
         b'\xC8': Opcode('EORB', 'immediate', 1),
         b'\xC9': Opcode('ADCB', 'immediate', 1),
         b'\xCA': Opcode('ORAB', 'immediate', 1),
         b'\xCB': Opcode('ADDB', 'immediate', 1),
         b'\xCE': Opcode('LDX', 'immediate', 2),
-        b'\xCF': Opcode('STX', 'immediate', 1),
+        # b'\xCF': Opcode('STX', 'immediate', 2), # Store Immediate not handled
         b'\xD0': Opcode('SUBB', 'direct', 1),
         b'\xD1': Opcode('CMPB', 'direct', 1),
         b'\xD2': Opcode('SBCB', 'direct', 1),
@@ -392,7 +394,7 @@ class CPU():
         b'\xD9': Opcode('ADCB', 'direct', 1),
         b'\xDA': Opcode('ORAB', 'direct', 1),
         b'\xDB': Opcode('ADDB', 'direct', 1),
-        b'\xDD': Opcode('HCF', 'inherent', 0, continues=False),
+        b'\xDD': Opcode('HCFDD', 'inherent', 0, continues=False),
         b'\xDE': Opcode('LDX', 'direct', 1),
         b'\xDF': Opcode('STX', 'direct', 1),
         b'\xE0': Opcode('SUBB', 'indexed', 1, index_register='X'),
@@ -605,6 +607,7 @@ class CPU():
         """
         opcode_bytes = self.find_opcode_bytes(address)
         opcode = self.opcodes[opcode_bytes]
+        opcode.used = True
 
         opcode_covered = self.set_memory_use('opcode',
                                              address, opcode.opcode_len)
@@ -629,6 +632,7 @@ class CPU():
         """Fetch an address of code from <address> and process it."""
         if self.set_memory_use('vector', address, 2):
             return
+        self.memory_referenced.add(address)
         code_address = self.get_u16(address)
         if self.args.notify_vectors:
             print(f'Vector at 0x{address:04X} points to code at '
@@ -730,6 +734,20 @@ class CPU():
 
     def disassemble(self, out_file: TextIO) -> None:
         """Print disassembled code to <out_file>."""
+        print('        CPU 6800')
+        if self.opcodes[b'\x14'].used:
+            print('NBA     MACRO')
+            print('        DB 0x14')
+            print('        ENDM')
+        if self.opcodes[b'\x9D'].used:
+            print('HCF     MACRO')
+            print('        DB 0x9D')
+            print('        ENDM')
+        if self.opcodes[b'\xDD'].used:
+            print('HCFDD   MACRO')
+            print('        DB 0xDD')
+            print('        ENDM')
+
         address = 0x0000
         need_origin = False
         while address < 0x10000:
@@ -808,21 +826,32 @@ def main() -> int:
     ))
 
     cpu = CPU(memory_map, args)
+    # 41A6 *047D
+    # Vector table for JSR 0,X at 0x452F:
+    cpu.vectors += [0x4538, 0x453A, 0x453C, 0x453E, 0x4540, 0x4542, 0x4544, 0x4546]
+    # 6310 **00F8
+    # 69E5
+    # Vector table for JSR 0,X at 0x75AB:
+    cpu.vectors += [
+    ]
+
     cpu.process_vectors()
     cpu.process_code_gaps()
     cpu.labels |= {
         0x014E: 'IRQ_MISSED',
+        0x03E5: 'X_IN_RAM',
         0x0670: 'NMI_FLAG',
         0x03E0: 'IRQ_COUNT',
         0x4100: 'RESET',
+        0x5E30: 'ADD_B_TO_X',
         0x6268: 'IRQ_HANDLER',
-        0x40C4: 'NMI_HANDLER'
+        0x40C4: 'NMI_HANDLER',
+        0xFFF8: 'IRQ_VEC',
+        0xFFFA: 'SWI_VEC',
+        0xFFFC: 'NMI_VEC',
+        0xFFFE: 'RST_VEC'
     }
 
-    print('        CPU 6800')
-    print('NBA     MACRO')
-    print('        DB 0x14')
-    print('        ENDM')
     cpu.disassemble(sys.stdout)
     return 0
 
