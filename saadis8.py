@@ -826,14 +826,16 @@ def main() -> int:
     ))
 
     cpu = CPU(memory_map, args)
-    # 41A6 *047D
-    # Vector table for JSR 0,X at 0x452F:
-    cpu.vectors += [0x4538, 0x453A, 0x453C, 0x453E, 0x4540, 0x4542, 0x4544, 0x4546]
-    # 6310 **00F8
-    # 69E5
-    # Vector table for JSR 0,X at 0x75AB:
-    cpu.vectors += [
-    ]
+    # Vector table for JSR $00,X at 0x41A6
+    # Vector table for JSR $00,X at 0x452F:
+    cpu.vectors += list(x for x in range(0x4538, 0x4547, 2))
+    # Vector table for JMP $00,X at 0x6310
+    # Vector table for JMP $00,X at 0x69E5
+    # Vector table for JSR $00,X at 0x75AB
+    # Vector table for JMP $00,X at 0xEC19
+    # Vector table for JSR $00,X at 0xF39A:
+    cpu.vectors += list(x for x in range(0xF3C0, 0xF3E4, 2))
+    # Vector table for JMP $00,X at 0xFD7D
 
     cpu.process_vectors()
     cpu.process_code_gaps()
@@ -841,6 +843,31 @@ def main() -> int:
         0x014E: 'IRQ_MISSED',
         0x03E5: 'X_IN_RAM',
         0x0670: 'NMI_FLAG',
+        0x2100: 'UNUSED_PIA_DATA',
+        0x2101: 'UNUSED_PIA_CONTROL',
+        0x2102: 'SOLENOID_9_16_PIA_DATA',
+        0x2103: 'SOLENOID_9_16_PIA_CONTROL',
+        0x2200: 'SOLENOID_1_8_LS273',
+        0x2400: 'LAMP_RETURN_PIA_DATA',
+        0x2401: 'LAMP_RETURN_PIA_CONTROL',
+        0x2402: 'LAMP_DRIVE_PIA_DATA',
+        0x2403: 'LAMP_DRIVE_PIA_CONTROL',
+        0x2800: 'PRINTER_STAT_PIA_DATA',
+        0x2801: 'PRINTER_STAT_PIA_CONTROL',
+        0x2802: 'PRINTER_DATA_PIA_DATA',
+        0x2803: 'PRINTER_DATA_PIA_CONTROL',
+        0x2C00: 'DMD_DATA_PIA_DATA',
+        0x2C01: 'DMD_DATA_PIA_CONTROL',
+        0x2C02: 'DMD_STAT_PIA_DATA',
+        0x2C03: 'DMD_STAT_PIA_CONTROL',
+        0x3000: 'SWITCH_RETURN_PIA_DATA',
+        0x3001: 'SWITCH_RETURN_PIA_CONTROL',
+        0x3002: 'SWITCH_DRIVE_PIA_DATA',
+        0x3003: 'SWITCH_DRIVE_PIA_CONTROL',
+        0x3400: 'DMD_SWITCH_PIA_DATA',
+        0x3401: 'DMD_SWITCH_PIA_CONTROL',
+        0x3402: 'SOUND_PIA_DATA',
+        0x3403: 'SOUND_PIA_CONTROL',
         0x03E0: 'IRQ_COUNT',
         0x4100: 'RESET',
         0x5E30: 'ADD_B_TO_X',
