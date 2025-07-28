@@ -204,6 +204,7 @@ class Opcode():
     operand_len: int
     total_len: int = field(init=False)
     index_register: str = ''  # Which register is used for indexed access?
+    memory_len: int = 1  # How many bytes of memory does this operation transfer?
     branches: bool = False  # Can this opcode cause a branch to the operand?
     continues: bool = True  # Does execution continue to the code that follows?
     used: bool = False  # Was this opcode disassembled?
@@ -336,10 +337,10 @@ class CPU():
         b'\x99': Opcode('ADCA', 'direct', 1),
         b'\x9A': Opcode('ORAA', 'direct', 1),
         b'\x9B': Opcode('ADDA', 'direct', 1),
-        b'\x9C': Opcode('CPX', 'direct', 1),
+        b'\x9C': Opcode('CPX', 'direct', 1, memory_len=2),
         b'\x9D': Opcode('HCF', 'inherent', 0, continues=False),
-        b'\x9E': Opcode('LDS', 'direct', 1),
-        b'\x9F': Opcode('STS', 'direct', 1),
+        b'\x9E': Opcode('LDS', 'direct', 1, memory_len=2),
+        b'\x9F': Opcode('STS', 'direct', 1, memory_len=2),
         b'\xA0': Opcode('SUBA', 'indexed', 1, index_register='X'),
         b'\xA1': Opcode('CMPA', 'indexed', 1, index_register='X'),
         b'\xA2': Opcode('SBCA', 'indexed', 1, index_register='X'),
@@ -351,10 +352,10 @@ class CPU():
         b'\xA9': Opcode('ADCA', 'indexed', 1, index_register='X'),
         b'\xAA': Opcode('ORAA', 'indexed', 1, index_register='X'),
         b'\xAB': Opcode('ADDA', 'indexed', 1, index_register='X'),
-        b'\xAC': Opcode('CPX', 'indexed', 1, index_register='X'),
+        b'\xAC': Opcode('CPX', 'indexed', 1, index_register='X', memory_len=2),
         b'\xAD': Opcode('JSR', 'indexed', 1, index_register='X', branches=True),
-        b'\xAE': Opcode('LDS', 'indexed', 1, index_register='X'),
-        b'\xAF': Opcode('STS', 'indexed', 1, index_register='X'),
+        b'\xAE': Opcode('LDS', 'indexed', 1, index_register='X', memory_len=2),
+        b'\xAF': Opcode('STS', 'indexed', 1, index_register='X', memory_len=2),
         b'\xB0': Opcode('SUBA', 'direct', 2),
         b'\xB1': Opcode('CMPA', 'direct', 2),
         b'\xB2': Opcode('SBCA', 'direct', 2),
@@ -366,10 +367,10 @@ class CPU():
         b'\xB9': Opcode('ADCA', 'direct', 2),
         b'\xBA': Opcode('ORAA', 'direct', 2),
         b'\xBB': Opcode('ADDA', 'direct', 2),
-        b'\xBC': Opcode('CPX', 'direct', 2),
+        b'\xBC': Opcode('CPX', 'direct', 2, memory_len=2),
         b'\xBD': Opcode('JSR', 'direct', 2, branches=True),
-        b'\xBE': Opcode('LDS', 'direct', 2),
-        b'\xBF': Opcode('STS', 'direct', 2),
+        b'\xBE': Opcode('LDS', 'direct', 2, memory_len=2),
+        b'\xBF': Opcode('STS', 'direct', 2, memory_len=2),
         b'\xC0': Opcode('SUBB', 'immediate', 1),
         b'\xC1': Opcode('CMPB', 'immediate', 1),
         b'\xC2': Opcode('SBCB', 'immediate', 1),
@@ -395,8 +396,8 @@ class CPU():
         b'\xDA': Opcode('ORAB', 'direct', 1),
         b'\xDB': Opcode('ADDB', 'direct', 1),
         b'\xDD': Opcode('HCFDD', 'inherent', 0, continues=False),
-        b'\xDE': Opcode('LDX', 'direct', 1),
-        b'\xDF': Opcode('STX', 'direct', 1),
+        b'\xDE': Opcode('LDX', 'direct', 1, memory_len=2),
+        b'\xDF': Opcode('STX', 'direct', 1, memory_len=2),
         b'\xE0': Opcode('SUBB', 'indexed', 1, index_register='X'),
         b'\xE1': Opcode('CMPB', 'indexed', 1, index_register='X'),
         b'\xE2': Opcode('SBCB', 'indexed', 1, index_register='X'),
@@ -408,8 +409,8 @@ class CPU():
         b'\xE9': Opcode('ADCB', 'indexed', 1, index_register='X'),
         b'\xEA': Opcode('ORAB', 'indexed', 1, index_register='X'),
         b'\xEB': Opcode('ADDB', 'indexed', 1, index_register='X'),
-        b'\xEE': Opcode('LDX', 'indexed', 1, index_register='X'),
-        b'\xEF': Opcode('STX', 'indexed', 1, index_register='X'),
+        b'\xEE': Opcode('LDX', 'indexed', 1, index_register='X', memory_len=2),
+        b'\xEF': Opcode('STX', 'indexed', 1, index_register='X', memory_len=2),
         b'\xF0': Opcode('SUBB', 'direct', 2),
         b'\xF1': Opcode('CMPB', 'direct', 2),
         b'\xF2': Opcode('SBCB', 'direct', 2),
@@ -421,8 +422,8 @@ class CPU():
         b'\xF9': Opcode('ADCB', 'direct', 2),
         b'\xFA': Opcode('ORAB', 'direct', 2),
         b'\xFB': Opcode('ADDB', 'direct', 2),
-        b'\xFE': Opcode('LDX', 'direct', 2),
-        b'\xFF': Opcode('STX', 'direct', 2)
+        b'\xFE': Opcode('LDX', 'direct', 2, memory_len=2),
+        b'\xFF': Opcode('STX', 'direct', 2, memory_len=2)
     }
 
     big_endian = True
@@ -487,7 +488,11 @@ class CPU():
             if use_address in self.memory_use:
                 if self.memory_use[use_address] == use:
                     continue
-                raise SetUseError(use_address, self.memory_use[use_address], use)
+                if self.memory_use[use_address] == 'data16' and use == 'data8':
+                    continue
+                if self.memory_use[use_address] != 'data8' and use != 'data16':
+                    raise SetUseError(use_address,
+                                      self.memory_use[use_address], use)
             self.memory_use[use_address] = use
             all_set_correctly = False
         return all_set_correctly
@@ -552,7 +557,8 @@ class CPU():
         if opcode.branches:
             code_addresses.append(operand)
         else:
-            self.set_memory_use('data', operand, 1)
+            use = 'data16' if opcode.memory_len == 2 else 'data8'
+            self.set_memory_use(use, operand, 1)
         if opcode.continues:
             code_addresses.append(address + opcode.total_len)
         return code_addresses
@@ -579,7 +585,8 @@ class CPU():
             code_addresses.append(operand)
         else:
             # Does anything do relative addressing for code?
-            self.set_memory_use('data', operand, 1)
+            use = 'data16' if opcode.memory_len == 2 else 'data8'
+            self.set_memory_use(use, operand, 1)
         if opcode.continues:
             code_addresses.append(address + opcode.total_len)
         return code_addresses
@@ -630,7 +637,7 @@ class CPU():
 
     def process_vector(self, address: int) -> None:
         """Fetch an address of code from <address> and process it."""
-        if self.set_memory_use('vector', address, 2):
+        if self.set_memory_use('datavec', address, 2):
             return
         self.memory_referenced.add(address)
         code_address = self.get_u16(address)
@@ -665,18 +672,18 @@ class CPU():
         If an exception occurs, abandon that area as still unknown.
         """
         last_address = -2
-        last_mem_type = 'data'
+        last_mem_type = 'data8'
         while True:
             found = 0
             for address in sorted(self.memory_use):
                 mem_type = self.memory_use[address]
                 if (address != last_address + 1
-                    and last_mem_type not in {'data', 'vector'}):
+                    and not last_mem_type.startswith('data')):
                     found += self.process_potential_code(last_address + 1)
                 last_address = address
                 last_mem_type = mem_type
             # Check if there is a gap after code at the end of memory
-            if (last_mem_type not in {'data', 'vector'}
+            if (not last_mem_type.startswith('data')
                 and last_address < 0xFFFF):
                 found += self.process_potential_code(last_address + 1)
             if not found:
@@ -764,12 +771,17 @@ class CPU():
                 print(f'\n        * = ${address:04X}', file=out_file)
                 need_origin = False
 
-            address_usage = self.memory_use.get(address, 'data')
-            if address_usage == 'data':
+            address_usage = self.memory_use.get(address, 'data8')
+            if address_usage == 'data8':
                 print(f'{label:7} DB ${self[address]:02X}', file=out_file)
                 address += 1
                 continue
-            if address_usage == 'vector':
+            if address_usage == 'data16':
+                print(f'{label:7} DW ${self.get_u16(address):04X}',
+                      file=out_file)
+                address += 2
+                continue
+            if address_usage == 'datavec':
                 print(f'{label:7} DW {self.label_str(self.get_u16(address))}',
                       file=out_file)
                 address += 2
