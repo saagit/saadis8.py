@@ -35,9 +35,6 @@ from typing import TextIO
 # object.  Trying to fetch an opcode from a non-"ROM" "MemoryDevice" object
 # results in an exception being raised.
 
-# SAATODO: Do the actual disassembly (target crasm)
-# SAATODO: Figure out module/package
-
 VERSION='0.01'
 
 def progname() -> str:
