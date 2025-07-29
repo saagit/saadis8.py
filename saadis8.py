@@ -791,6 +791,18 @@ class CPU():
                       file=out_file)
                 address += 2
                 continue
+            if address_usage == 'dataasc':
+                start_address = address
+                while True:
+                    address += 1
+                    if (self.memory_use.get(address, 'data8') != 'dataasc'
+                        or address >= 0x10000
+                        or address in self.memory_referenced):
+                        break
+                asc_str = ''.join([chr(self[d])
+                                   for d in range(start_address, address)])
+                print(f'{label:7} ASC "{asc_str}"', file=out_file)
+                continue
             if address_usage != 'opcode':
                 raise UnknownUseError(address, address_usage)
 
@@ -854,6 +866,40 @@ def main() -> int:
     cpu.vectors += list(x for x in range(0xF3C0, 0xF3E4, 2))
     # Vector table for JMP $00,X at 0xFD7D
 
+    for address in range(0x7f03, 0x80f4, 16):
+        cpu.memory_referenced.add(address)
+    cpu.set_memory_use('dataasc', 0x7f03, 14)
+    cpu.set_memory_use('dataasc', 0x7f13, 13)
+    cpu.set_memory_use('dataasc', 0x7f23, 11)
+    cpu.set_memory_use('dataasc', 0x7f33, 13)
+    cpu.set_memory_use('dataasc', 0x7f43, 8)
+    cpu.set_memory_use('dataasc', 0x7f53, 11)
+    cpu.set_memory_use('dataasc', 0x7f63, 7)
+    cpu.set_memory_use('dataasc', 0x7f73, 14)
+    cpu.set_memory_use('dataasc', 0x7f83, 4)
+    cpu.set_memory_use('dataasc', 0x7f93, 13)
+    cpu.set_memory_use('dataasc', 0x7fa3, 15)
+    cpu.set_memory_use('dataasc', 0x7fb3, 12)
+    cpu.set_memory_use('dataasc', 0x7fc3, 14)
+    cpu.set_memory_use('dataasc', 0x7fd3, 11)
+    cpu.set_memory_use('dataasc', 0x7fe3, 12)
+    cpu.set_memory_use('dataasc', 0x7ff3, 12)
+    cpu.set_memory_use('dataasc', 0x8003, 12)
+    cpu.set_memory_use('dataasc', 0x8013, 10)
+    cpu.set_memory_use('dataasc', 0x8023, 13)
+    cpu.set_memory_use('dataasc', 0x8033, 12)
+    cpu.set_memory_use('dataasc', 0x8043, 11)
+    cpu.set_memory_use('dataasc', 0x8053, 12)
+    cpu.set_memory_use('dataasc', 0x8063, 16)
+    cpu.set_memory_use('dataasc', 0x8073, 15)
+    cpu.set_memory_use('dataasc', 0x8083, 11)
+    cpu.set_memory_use('dataasc', 0x8093, 14)
+    cpu.set_memory_use('dataasc', 0x80a3, 15)
+    cpu.set_memory_use('dataasc', 0x80b3, 13)
+    cpu.set_memory_use('dataasc', 0x80c3, 13)
+    cpu.set_memory_use('dataasc', 0x80d3, 15)
+    cpu.set_memory_use('dataasc', 0x80e3, 16)
+    cpu.set_memory_use('dataasc', 0x80f3, 13)
     cpu.process_vectors()
     cpu.process_code_gaps()
     cpu.labels |= {
