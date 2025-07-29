@@ -555,7 +555,7 @@ class CPU():
             code_addresses.append(operand)
         else:
             use = 'data16' if opcode.memory_len == 2 else 'data8'
-            self.set_memory_use(use, operand, 1)
+            self.set_memory_use(use, operand)
         if opcode.continues:
             code_addresses.append(address + opcode.total_len)
         return code_addresses
@@ -583,7 +583,7 @@ class CPU():
         else:
             # Does anything do relative addressing for code?
             use = 'data16' if opcode.memory_len == 2 else 'data8'
-            self.set_memory_use(use, operand, 1)
+            self.set_memory_use(use, operand)
         if opcode.continues:
             code_addresses.append(address + opcode.total_len)
         return code_addresses
@@ -770,8 +770,16 @@ class CPU():
 
             address_usage = self.memory_use.get(address, 'data8')
             if address_usage == 'data8':
-                print(f'{label:7} DB ${self[address]:02X}', file=out_file)
-                address += 1
+                start_address = address
+                while True:
+                    address += 1
+                    if (address >= start_address + 16 or address >= 0x10000
+                        or self.memory_use.get(address, 'data8') != 'data8'
+                        or address in self.memory_referenced):
+                        break
+                data_str = ','.join([f'${self[a]:02X}'
+                                     for a in range(start_address, address)])
+                print(f'{label:7} DB {data_str}', file=out_file)
                 continue
             if address_usage == 'data16':
                 print(f'{label:7} DW ${self.get_u16(address):04X}',
