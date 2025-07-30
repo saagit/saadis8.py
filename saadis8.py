@@ -485,9 +485,11 @@ class CPU():
             if use_address in self.memory_use:
                 if self.memory_use[use_address] == use:
                     continue
-                if self.memory_use[use_address] == 'data16' and use == 'data8':
+                if (self.memory_use[use_address] in {'data16', 'dataasc'}
+                    and use == 'data8'):
                     continue
-                if self.memory_use[use_address] != 'data8' and use != 'data16':
+                if (self.memory_use[use_address] != 'data8'
+                    and use not in {'data16', 'dataasc'}):
                     raise SetUseError(use_address,
                                       self.memory_use[use_address], use)
             self.memory_use[use_address] = use
@@ -824,6 +826,24 @@ class CPU():
                 results[unknown] = num_opcodes
         return results
 
+def is_ascii_printable(ch: int) -> bool:
+    """Return True iff chr(ch) isprintable and isascii."""
+    ch_s = chr(ch)
+    return ch_s.isascii() and ch_s.isprintable()
+
+def add_asc(cpu: CPU, address: int, max_len: int=None) -> None:
+    """Examine string at <address> and set memory use appropriately."""
+    assert is_ascii_printable(cpu[address])
+    cpu.memory_referenced.add(address)
+    len = 0
+    while True:
+        len += 1
+        if not is_ascii_printable(cpu[address + len]):
+            break
+        if max_len and len >= max_len:
+            break
+    cpu.set_memory_use('dataasc', address, len)
+
 def main() -> int:
     """The main event."""
     args = parse_args()
@@ -866,40 +886,17 @@ def main() -> int:
     cpu.vectors += list(x for x in range(0xF3C0, 0xF3E4, 2))
     # Vector table for JMP $00,X at 0xFD7D
 
-    for address in range(0x7f03, 0x80f4, 16):
-        cpu.memory_referenced.add(address)
-    cpu.set_memory_use('dataasc', 0x7f03, 14)
-    cpu.set_memory_use('dataasc', 0x7f13, 13)
-    cpu.set_memory_use('dataasc', 0x7f23, 11)
-    cpu.set_memory_use('dataasc', 0x7f33, 13)
-    cpu.set_memory_use('dataasc', 0x7f43, 8)
-    cpu.set_memory_use('dataasc', 0x7f53, 11)
-    cpu.set_memory_use('dataasc', 0x7f63, 7)
-    cpu.set_memory_use('dataasc', 0x7f73, 14)
-    cpu.set_memory_use('dataasc', 0x7f83, 4)
-    cpu.set_memory_use('dataasc', 0x7f93, 13)
-    cpu.set_memory_use('dataasc', 0x7fa3, 15)
-    cpu.set_memory_use('dataasc', 0x7fb3, 12)
-    cpu.set_memory_use('dataasc', 0x7fc3, 14)
-    cpu.set_memory_use('dataasc', 0x7fd3, 11)
-    cpu.set_memory_use('dataasc', 0x7fe3, 12)
-    cpu.set_memory_use('dataasc', 0x7ff3, 12)
-    cpu.set_memory_use('dataasc', 0x8003, 12)
-    cpu.set_memory_use('dataasc', 0x8013, 10)
-    cpu.set_memory_use('dataasc', 0x8023, 13)
-    cpu.set_memory_use('dataasc', 0x8033, 12)
-    cpu.set_memory_use('dataasc', 0x8043, 11)
-    cpu.set_memory_use('dataasc', 0x8053, 12)
-    cpu.set_memory_use('dataasc', 0x8063, 16)
-    cpu.set_memory_use('dataasc', 0x8073, 15)
-    cpu.set_memory_use('dataasc', 0x8083, 11)
-    cpu.set_memory_use('dataasc', 0x8093, 14)
-    cpu.set_memory_use('dataasc', 0x80a3, 15)
-    cpu.set_memory_use('dataasc', 0x80b3, 13)
-    cpu.set_memory_use('dataasc', 0x80c3, 13)
-    cpu.set_memory_use('dataasc', 0x80d3, 15)
-    cpu.set_memory_use('dataasc', 0x80e3, 16)
-    cpu.set_memory_use('dataasc', 0x80f3, 13)
+    for address in range(0x7f03, 0x80f4, 16):  # Companies and phone numbers
+        add_asc(cpu, address, 16)
+    for address in range(0xD14E, 0xD17E, 16):  # Startup version
+        add_asc(cpu, address, 16)
+    add_asc(cpu, 0xD17F)  # PARTICIPATE   IN LOCAL  TOURNAMENTS!
+    for address in range(0xD21B, 0xD22C, 3):  # Hi-score initials
+        add_asc(cpu, address, 3)
+    cpu.memory_referenced.add(0xD723) # ^X at beginning of audit printout
+    for address in range(0xD724, 0xD88A, 24):  # Audit printout
+        add_asc(cpu, address, 24)
+
     cpu.process_vectors()
     cpu.process_code_gaps()
     cpu.labels |= {
@@ -936,6 +933,9 @@ def main() -> int:
         0x5E30: 'ADD_B_TO_X',
         0x6268: 'IRQ_HANDLER',
         0x40C4: 'NMI_HANDLER',
+        0xD21B: 'HI_SCORE_DEFAULT_FIRST_INITIAL',
+        0xD21C: 'HI_SCORE_DEFAULT_MIDDLE_INITIAL',
+        0xD21D: 'HI_SCORE_DEFAULT_LAST_INITIAL',
         0xFFF8: 'IRQ_VEC',
         0xFFFA: 'SWI_VEC',
         0xFFFC: 'NMI_VEC',
