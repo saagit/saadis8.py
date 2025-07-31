@@ -815,11 +815,13 @@ class CPU():
                 print(f'{label:7} DB {data_str}', file=out_file)
                 continue
             if address_usage == 'data16':
+                assert self.memory_use.get(address + 1, 'data8') == 'data16'
                 print(f'{label:7} DW ${self.get_u16(address):04X}',
                       file=out_file)
                 address += 2
                 continue
             if address_usage == 'datavec':
+                assert self.memory_use.get(address + 1, 'data8') == 'datavec'
                 print(f'{label:7} DW {self.label_str(self.get_u16(address))}',
                       file=out_file)
                 address += 2
