@@ -67,10 +67,36 @@ def parse_args() -> argparse.Namespace:
 
     return args
 
+def format_str_for_crasm(python_str: str) -> str:
+    """Return <python_str> as a string suitable for a crasm ASC statement."""
+    output_chars = []
+    output_chars.append('"')
+    for python_ch in python_str:
+        if python_ch == '\r':
+            output_chars.append("\\r")
+        elif python_ch == '\n':
+            output_chars.append("\\n")
+        elif python_ch == '\t':
+            output_chars.append("\\t")
+        elif python_ch == '\0':
+            output_chars.append("\\0")
+        elif python_ch == '\'':
+            output_chars.append("\\'")
+        elif python_ch == '"':
+            output_chars.append("\\\"")
+        elif python_ch == '\\':
+            output_chars.append("\\\\")
+        elif python_ch.isascii() and python_ch.isprintable():
+            output_chars.append(python_ch)
+        else:
+            # crasm doesn't handle escapes like \013.  It interprets that
+            # particular example as '\0' '1' '3'.
+            raise InvalidCharacter(python_ch)
+    output_chars.append('"')
+    return ''.join(output_chars)
+
 class Disassem8Error(Exception):
-    """
-    Base class for all of our possible exceptions.
-    """
+    """Base class for all of our possible exceptions."""
 
 class LocationAccessError(Disassem8Error):
     """
@@ -96,19 +122,16 @@ class SetUseError(Disassem8Error):
         super().__init__(self.message)
 
 class UnknownUseError(Disassem8Error):
-    """
-    Exception raised when the use of a memory location is unknown.
-    """
+    """Exception raised when the use of a memory location is unknown."""
     def __init__(self, address: int, usage: str):
         self.address = address
         self.usage = usage
-        self.message = f'The use {usage} of memory at 0x{address:04X} is unknown.'
+        self.message = (f'The use {usage} of memory '
+                        f'at 0x{address:04X} is unknown.')
         super().__init__(self.message)
 
 class OpcodeInvalidError(Disassem8Error):
-    """
-    Exception raised when a fetched opcode is not recognized.
-    """
+    """Exception raised when a fetched opcode is not recognized."""
     def __init__(self, address: int, opcode: int):
         self.address = address
         self.opcode = opcode
@@ -117,14 +140,19 @@ class OpcodeInvalidError(Disassem8Error):
         super().__init__(self.message)
 
 class UnknownAddressingModeError(Disassem8Error):
-    """
-    Exception raised when the addressing mode is unexpected.
-    """
+    """Exception raised when the addressing mode is unexpected."""
     def __init__(self, address: int, addressing_mode: str):
         self.address = address
         self.addressing_mode = addressing_mode
         self.message = (f'Addressing mode {addressing_mode} at '
                         f'0x{address:04X} is unknown.')
+        super().__init__(self.message)
+
+class InvalidCharacter(Disassem8Error):
+    """Exception raised when a character string can not be output."""
+    def __init__(self, invalid_ch: str):
+        self.invalid_ch = invalid_ch
+        self.message = f'Character {invalid_ch!r} can not be output.'
         super().__init__(self.message)
 
 class MemoryDevice():
@@ -165,7 +193,8 @@ class MemoryMap():
             for offset in range(length):
                 self.memory_map[base_address + offset] = (device, offset)
 
-    def device_and_offset(self, address_in_memory_map: int) -> tuple[MemoryDevice,
+    def device_and_offset(self,
+                          address_in_memory_map: int) -> tuple[MemoryDevice,
                                                                      int]:
         """Return the memory device and offset for <address_in_memory_map>."""
         return self.memory_map[address_in_memory_map]
@@ -201,7 +230,7 @@ class Opcode():
     operand_len: int
     total_len: int = field(init=False)
     index_register: str = ''  # Which register is used for indexed access?
-    memory_len: int = 1  # How many bytes of memory does this operation transfer?
+    memory_len: int = 1  # How many bytes of memory does this op transfer?
     branches: bool = False  # Can this opcode cause a branch to the operand?
     continues: bool = True  # Does execution continue to the code that follows?
     used: bool = False  # Was this opcode disassembled?
@@ -470,8 +499,8 @@ class CPU():
         for addr in self.vectors:
             self.process_vector(addr)
 
-    def set_memory_use(self,
-                       use: str, address: int, num_bytes: int = 1) -> bool:
+    def set_memory_use(self, use: str, address: int, num_bytes: int,
+                       referenced: bool) -> bool:
         """
         Set the usage of <num_bytes> of memory starting at <address> to <use>.
 
@@ -480,6 +509,8 @@ class CPU():
         was already set to some other usage.  If the usage of any of the bytes
         hadn't been set before, return False.
         """
+        if referenced:
+            self.memory_referenced.add(address)
         all_set_correctly = True
         for use_address in range(address, address + num_bytes):
             if use_address in self.memory_use:
@@ -507,7 +538,8 @@ class CPU():
                 return opcode_bytes
         raise OpcodeInvalidError(address, self.memory[address])
 
-    def get_operand_and_len(self, address: int, opcode:Opcode) -> tuple[int, int]:
+    def get_operand_and_len(self,
+                            address: int, opcode:Opcode) -> tuple[int, int]:
         """Return raw operand and its byte length for <opcode> at <address>."""
         if opcode.operand_len == 1:
             return (self.memory[address + opcode.opcode_len], 1)
@@ -550,14 +582,14 @@ class CPU():
         whether the particular opcode continues execution after itself and
         whether the code can branch.
         """
-        operand, _operand_len = self.get_operand_and_len(address, opcode)
+        operand, operand_len = self.get_operand_and_len(address, opcode)
         self.memory_referenced.add(operand)
         code_addresses = []
         if opcode.branches:
             code_addresses.append(operand)
         else:
             use = 'data16' if opcode.memory_len == 2 else 'data8'
-            self.set_memory_use(use, operand)
+            self.set_memory_use(use, operand, operand_len, False)
         if opcode.continues:
             code_addresses.append(address + opcode.total_len)
         return code_addresses
@@ -585,7 +617,7 @@ class CPU():
         else:
             # Does anything do relative addressing for code?
             use = 'data16' if opcode.memory_len == 2 else 'data8'
-            self.set_memory_use(use, operand)
+            self.set_memory_use(use, operand, operand_len, False)
         if opcode.continues:
             code_addresses.append(address + opcode.total_len)
         return code_addresses
@@ -616,10 +648,10 @@ class CPU():
         opcode.used = True
 
         opcode_covered = self.set_memory_use('opcode',
-                                             address, opcode.opcode_len)
+                                             address, opcode.opcode_len, False)
         operand_covered = self.set_memory_use(opcode.addressing_mode,
                                               address + opcode.opcode_len,
-                                              opcode.operand_len)
+                                              opcode.operand_len, False)
         if opcode_covered and operand_covered:
             return 0  # No need for further processing
 
@@ -636,9 +668,8 @@ class CPU():
 
     def process_vector(self, address: int) -> None:
         """Fetch an address of code from <address> and process it."""
-        if self.set_memory_use('datavec', address, 2):
+        if self.set_memory_use('datavec', address, 2, True):
             return
-        self.memory_referenced.add(address)
         code_address = self.get_u16(address)
         if self.args.notify_vectors:
             print(f'Vector at 0x{address:04X} points to code at '
@@ -759,7 +790,7 @@ class CPU():
         while address < 0x10000:
             label = self.label_str(address)
             if not self.memory.is_rom(address):
-                if address in self.memory_use:
+                if address in self.memory_referenced:
                     print(f'{label:7} equ ${address:04X}', file=out_file)
                 need_origin = True
                 address += 1
@@ -803,46 +834,14 @@ class CPU():
                         break
                 asc_str = ''.join([chr(self[d])
                                    for d in range(start_address, address)])
-                print(f'{label:7} ASC "{asc_str}"', file=out_file)
+                print(f'{label:7} ASC {format_str_for_crasm(asc_str)}',
+                      file=out_file)
                 continue
             if address_usage != 'opcode':
                 raise UnknownUseError(address, address_usage)
 
             # At this point, we know an opcode is at <address>
             address += self.disassemble_opcode(address, label, out_file)
-
-    def analyze_unknown_rom(self) -> dict[int, int]:
-        """
-        Return dict of number of discovered opcodes for each unknown ROM address.
-
-        Experimental helper method to find blocks of undiscovered code.
-        """
-        unknowns = [address for address in range(0x10000)
-                    if (self.memory.is_rom(address)
-                        and address not in self.memory_use)]
-        results = {}
-        for unknown in unknowns:
-            if num_opcodes := self.process_potential_code(unknown):
-                results[unknown] = num_opcodes
-        return results
-
-def is_ascii_printable(ch: int) -> bool:
-    """Return True iff chr(ch) isprintable and isascii."""
-    ch_s = chr(ch)
-    return ch_s.isascii() and ch_s.isprintable()
-
-def add_asc(cpu: CPU, address: int, max_len: int=None) -> None:
-    """Examine string at <address> and set memory use appropriately."""
-    assert is_ascii_printable(cpu[address])
-    cpu.memory_referenced.add(address)
-    len = 0
-    while True:
-        len += 1
-        if not is_ascii_printable(cpu[address + len]):
-            break
-        if max_len and len >= max_len:
-            break
-    cpu.set_memory_use('dataasc', address, len)
 
 def main() -> int:
     """The main event."""
@@ -887,15 +886,15 @@ def main() -> int:
     # Vector table for JMP $00,X at 0xFD7D
 
     for address in range(0x7f03, 0x80f4, 16):  # Companies and phone numbers
-        add_asc(cpu, address, 16)
+        cpu.set_memory_use('dataasc', address, 16, True)
     for address in range(0xD14E, 0xD17E, 16):  # Startup version
-        add_asc(cpu, address, 16)
-    add_asc(cpu, 0xD17F)  # PARTICIPATE   IN LOCAL  TOURNAMENTS!
+        cpu.set_memory_use('dataasc', address, 16, True)
+    cpu.set_memory_use('dataasc', 0xD17F, 36, True)  # PARTICIPATE ...
     for address in range(0xD21B, 0xD22C, 3):  # Hi-score initials
-        add_asc(cpu, address, 3)
-    cpu.memory_referenced.add(0xD723) # ^X at beginning of audit printout
+        cpu.set_memory_use('dataasc', address, 3, True)
+    cpu.memory_referenced.add(0xD723)  # ^X at beginning of audit printout
     for address in range(0xD724, 0xD88A, 24):  # Audit printout
-        add_asc(cpu, address, 24)
+        cpu.set_memory_use('dataasc', address, 24, True)
 
     cpu.process_vectors()
     cpu.process_code_gaps()
@@ -933,9 +932,11 @@ def main() -> int:
         0x5E30: 'ADD_B_TO_X',
         0x6268: 'IRQ_HANDLER',
         0x40C4: 'NMI_HANDLER',
+        0xD17F: 'PARTICIPATE_STR',
         0xD21B: 'HI_SCORE_DEFAULT_FIRST_INITIAL',
         0xD21C: 'HI_SCORE_DEFAULT_MIDDLE_INITIAL',
         0xD21D: 'HI_SCORE_DEFAULT_LAST_INITIAL',
+        0xD723: 'AUDIT_PRINT_FORMAT',
         0xFFF8: 'IRQ_VEC',
         0xFFFA: 'SWI_VEC',
         0xFFFC: 'NMI_VEC',
