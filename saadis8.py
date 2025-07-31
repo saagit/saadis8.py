@@ -721,11 +721,11 @@ class CPU():
 
     def label_str(self, address: int) -> str:
         """Return an assembly label for location <address>."""
-        if not address in self.memory_referenced:
-            return ''
         try:
             return self.labels[address]
         except KeyError:
+            if not address in self.memory_referenced:
+                return ''
             device, offset = self.memory.device_and_offset(address)
             return f'{device.name}_{offset:04X}'
 
@@ -740,7 +740,11 @@ class CPU():
         # At this point, we know an opcode is at <address> and has an operand
         operand, operand_len = self.get_operand_and_len(address, opcode)
         if opcode.addressing_mode == 'immediate':
-            print(f'{label:7} {opcode.mnemonic} #${operand:0{operand_len*2}X}',
+            try:
+                operand_str = self.labels[operand]
+            except KeyError:
+                operand_str = f'${operand:0{operand_len*2}X}'
+            print(f'{label:7} {opcode.mnemonic} #{operand_str}',
                   file=out_file)
         elif opcode.addressing_mode == 'direct':
             print(f'{label:7} {opcode.mnemonic} {self.label_str(operand)}',
@@ -771,6 +775,7 @@ class CPU():
 
     def disassemble(self, out_file: TextIO) -> None:
         """Print disassembled code to <out_file>."""
+        print('        PAGE 200,1000')  # TODO: Decide if PAGE max_values stays
         print('        CPU 6800')
         if self.opcodes[b'\x14'].used:
             print('NBA     MACRO')
@@ -790,7 +795,7 @@ class CPU():
         while address < 0x10000:
             label = self.label_str(address)
             if not self.memory.is_rom(address):
-                if address in self.memory_referenced:
+                if address in self.memory_referenced or address in self.labels:
                     print(f'{label:7} equ ${address:04X}', file=out_file)
                 need_origin = True
                 address += 1
@@ -904,6 +909,11 @@ def main() -> int:
         0x014E: 'IRQ_MISSED',
         0x03E5: 'X_IN_RAM',
         0x0670: 'NMI_FLAG',
+        0x0FBF: 'STACK_BEGIN',
+        # 1800 1820 1840 1860 1880 18A0 18C0 18E0
+        # 1900 1920 1940 1960 1980 19A0 19C0 19E0
+        # 1A00 1A20 1A40 1A60 1A80 1AA0 1AC0 1AE0
+        # 1B00 1B20 1B40 1B60 1B80 1BA0 1BC0 1BE0
         0x2100: 'UNUSED_PIA_DATA',
         0x2101: 'UNUSED_PIA_CONTROL',
         0x2102: 'SOLENOID_9_16_PIA_DATA',
@@ -931,6 +941,7 @@ def main() -> int:
         0x3403: 'SOUND_PIA_CONTROL',
         0x03E0: 'IRQ_COUNT',
         0x4100: 'RESET',
+        0x410B: 'CLR_RAM_TO_0X1600',
         0x5E30: 'ADD_B_TO_X',
         0x6268: 'IRQ_HANDLER',
         0x40C4: 'NMI_HANDLER',
